@@ -1,5 +1,5 @@
 /*
- Lightweight Message Queue, version 1.1.0
+ Lightweight Message Queue, version 1.1.1
 
  Copyright (C) 2018 Misam Saki, http://misam.ir
  Do not Change, Alter, or Remove this Licence
@@ -139,6 +139,7 @@ func countHandler(queues map[string]chan string) gin.HandlerFunc {
 		_, ok := queues[queueName]
 		if !ok {
 			context.String(http.StatusNotFound, "Queue not exists!")
+			context.Abort()
 			return
 		}
 		context.String(http.StatusOK, strconv.Itoa(len(queues[queueName])))
@@ -152,12 +153,14 @@ func skipHandler(queues map[string]chan string) gin.HandlerFunc {
 		_, ok := queues[queueName]
 		if !ok {
 			context.String(http.StatusNotFound, "Queue not exists!")
+			context.Abort()
 			return
 		}
 		number := context.Param("number")
 		n, err := strconv.Atoi(number)
 		if err != nil {
 			context.String(http.StatusBadRequest, "Number must be a integer!")
+			context.Abort()
 			return
 		}
 		var messages[] string
@@ -186,6 +189,7 @@ func setHandler(queues map[string]chan string, recoveryCh chan string, config Co
 		message = message[1:]
 		if message == "" {
 			context.String(http.StatusBadRequest, "Message is empty!")
+			context.Abort()
 			return
 		}
 		messageType := TEXT_MESSAGE_TYPE
@@ -199,6 +203,7 @@ func setHandler(queues map[string]chan string, recoveryCh chan string, config Co
 		if messageType == FILE_MESSAGE_TYPE {
 			if _, err := os.Stat(config.FileBasePath + messageParts[1]); os.IsNotExist(err) {
 				context.String(http.StatusNotAcceptable, "File not exists!")
+				context.Abort()
 				return
 			}
 		}
@@ -212,10 +217,12 @@ func setHandler(queues map[string]chan string, recoveryCh chan string, config Co
 				return
 			default:
 				context.String(http.StatusInternalServerError, "Internal server error!")
+				context.Abort()
 				return
 			}
 		default:
 			context.String(http.StatusInternalServerError, "Internal server error!")
+			context.Abort()
 			return
 		}
 	}
@@ -227,6 +234,7 @@ func getHandler(queues map[string]chan string, recoveryCh chan string, config Co
 		_, ok := queues[queueName]
 		if !ok {
 			context.String(http.StatusNotFound, "Queue not exists!")
+			context.Abort()
 			return
 		}
 		select {
@@ -240,10 +248,12 @@ func getHandler(queues map[string]chan string, recoveryCh chan string, config Co
 				return
 			default:
 				context.String(http.StatusInternalServerError, "Internal server error!")
+				context.Abort()
 				return
 			}
 		default:
 			context.String(http.StatusGone, "Queue is empty!")
+			context.Abort()
 			return
 		}
 	}
@@ -265,9 +275,11 @@ func responseMessage(context *gin.Context, config Config, uid string, message st
 			log.Println(err)
 			if os.IsNotExist(err) {
 				context.String(http.StatusNotFound, "File not found!")
+				context.Abort()
 				return
 			}
 			context.String(http.StatusInternalServerError, "Internal server error!")
+			context.Abort()
 			return
 		}
 		if uid != "" {
@@ -292,6 +304,7 @@ func fetchHandler(queues map[string]chan string, recoveryCh chan string, config 
 		_, ok := queues[queueName]
 		if !ok {
 			context.String(http.StatusNotFound, "Queue not exists!")
+			context.Abort()
 			return
 		}
 		select {
@@ -304,10 +317,12 @@ func fetchHandler(queues map[string]chan string, recoveryCh chan string, config 
 				return
 			default:
 				context.String(http.StatusInternalServerError, "Internal server error!")
+				context.Abort()
 				return
 			}
 		default:
 			context.String(http.StatusGone, "Queue is empty!")
+			context.Abort()
 			return
 		}
 	}
@@ -319,6 +334,7 @@ func downloadHandler(config Config) gin.HandlerFunc {
 		message = message[1:]
 		if message == "" {
 			context.String(http.StatusBadRequest, "Message is empty!")
+			context.Abort()
 			return
 		} else {
 			responseMessage(context, config, "", message)
@@ -333,6 +349,7 @@ func deleteHandler(queues map[string]chan string, recoveryCh chan string, config
 		_, ok := queues[queueName]
 		if !ok {
 			context.String(http.StatusNotFound, "Queue not exists!")
+			context.Abort()
 			return
 		}
 		delete(queues, queueName)
@@ -342,6 +359,7 @@ func deleteHandler(queues map[string]chan string, recoveryCh chan string, config
 			return
 		default:
 			context.String(http.StatusInternalServerError, "Internal server error!")
+			context.Abort()
 			return
 		}
 	}
@@ -351,6 +369,7 @@ func iPWhiteList(whitelist map[string]bool) gin.HandlerFunc {
 	return func (context *gin.Context) {
 		if !whitelist[context.ClientIP()] {
 			context.String(http.StatusForbidden, "Permission denied!")
+			context.Abort()
 			return
 		}
 	}
@@ -421,13 +440,13 @@ func main() {
 		return
 	})
 	router.GET("/version", func (context *gin.Context) {
-		context.String(http.StatusOK, "1.1.0")
+		context.String(http.StatusOK, "1.1.1")
 		return
 	})
 	router.GET("/copyright", func (context *gin.Context) {
 		copyright := `
 			***
-			Lightweight Message Queue, version 1.1.0
+			Lightweight Message Queue, version 1.1.1
 
 			Copyright (C) 2018 Misam Saki, http://misam.ir
 			Do not Change, Alter, or Remove this Licence
