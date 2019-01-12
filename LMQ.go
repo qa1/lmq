@@ -1,5 +1,5 @@
 /*
- Lightweight Message Queue, version 1.0.0
+ Lightweight Message Queue, version 1.1.0
 
  Copyright (C) 2018 Misam Saki, http://misam.ir
  Do not Change, Alter, or Remove this Licence
@@ -24,7 +24,7 @@ import (
 
 type Config struct {
 	Debug bool `json:"debug"`
-	Bind string `json:"bind"`
+	BindAddressList[] string `json:"bind_address_list"`
 	IpWhiteList[] string `json:"ip_white_list"`
 	RecoveryFilePath string `json:"recovery_file_path"`
 	FileBasePath string `json:"file_base_path"`
@@ -400,26 +400,34 @@ func main() {
 	router.GET("/delete/:queue", deleteHandler(queues, recoveryCh, config))
 
 	router.GET("/help", func (context *gin.Context) {
-		help := "Methods:\n"
-		help += "/list						List of the queues.\n"
-		help += "/count/:queue				Number of messages in a queue.\n"
-		help += "/skip/:queue/:number		Skip messages in the queue.\n"
-		help += "/set/:queue/:message		Set a message in the queue.\n"
-		help += "/get/:queue				Get a message in the queue.\n"
-		help += "/fetch/:queue				Fetch a message with content in a queue.\n"
-		help += "/download/:message			Download content of the message.\n"
-		help += "/delete/:queue				Delete the queue.\n"
+		help := "Methods:\n\n"
+		help += "GET /list\n" +
+			"\tList of the queues.\n\n"
+		help += "GET /count/[queue]\n" +
+			"\tNumber of messages in a queue.\n\n"
+		help += "GET /skip/[queue/[number]\n" +
+			"\tSkip messages in the queue.\n\n"
+		help += "GET /set/[queue/[message]\n" +
+			"\tSet a message in the queue.\n\n"
+		help += "GET /get/[queue]\n" +
+			"\tGet a message in the queue.\n\n"
+		help += "GET /fetch/[queue]\n" +
+			"\tFetch a message with content in a queue.\n\n"
+		help += "GET /download/[message]\n" +
+			"\tDownload content of the message.\n\n"
+		help += "GET /delete/[queue]\n" +
+			"\tDelete the queue.\n"
 		context.String(http.StatusOK, help)
 		return
 	})
 	router.GET("/version", func (context *gin.Context) {
-		context.String(http.StatusOK, "1.0.0")
+		context.String(http.StatusOK, "1.1.0")
 		return
 	})
 	router.GET("/copyright", func (context *gin.Context) {
 		copyright := `
 			***
-			Lightweight Message Queue, version 1.0.0
+			Lightweight Message Queue, version 1.1.0
 
 			Copyright (C) 2018 Misam Saki, http://misam.ir
 			Do not Change, Alter, or Remove this Licence
@@ -429,5 +437,9 @@ func main() {
 		return
 	})
 
-	router.Run(config.Bind)
+	i := 0
+	for ; i < len(config.BindAddressList) - 1; i++ {
+		go router.Run(config.BindAddressList[i])
+	}
+	router.Run(config.BindAddressList[i])
 }

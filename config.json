@@ -1,6 +1,6 @@
 {
 	"debug": true,
-	"bind": ":3000",
+	"bind_address_list": ["127.0.0.1:3000"],
 	"ip_white_list": ["127.0.0.1"],
 	"recovery_file_path": "./LMQ.rec",
 	"file_base_path": "./data/",
