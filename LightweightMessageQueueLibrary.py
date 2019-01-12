@@ -1,7 +1,7 @@
 #!/usr/bin/python  -*- coding: utf-8 -*-
 
 """
-	Lightweight Message Queue Library, version 1.0.1
+	Lightweight Message Queue Library, version 1.0.2
 
 	Copyright (C) 2018 Misam Saki, http://misam.ir
 	Do not Change, Alter, or Remove this Licence
@@ -17,17 +17,17 @@ class LightweightMessageQueueLibrary:
 
 	@staticmethod
 	def version():
-		return '1.0.1'
+		return '1.0.2'
 
 	@staticmethod
 	def compatible_version():
-		return '1.1.0'
+		return '1.1.1'
 
 	@staticmethod
 	def copyright():
 		print('''
 			***
-			Lightweight Message Queue Library, version 1.0.1
+			Lightweight Message Queue Library, version 1.0.2
 			
 			Copyright (C) 2018 Misam Saki, http://misam.ir
 			Do not Change, Alter, or Remove this Licence
