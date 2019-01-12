@@ -1,7 +1,7 @@
 #!/usr/bin/python  -*- coding: utf-8 -*-
 
 """
-	Lightweight Message Queue Library, version 1.0.0
+	Lightweight Message Queue Library, version 1.0.1
 
 	Copyright (C) 2018 Misam Saki, http://misam.ir
 	Do not Change, Alter, or Remove this Licence
@@ -12,22 +12,22 @@ import requests
 
 class LightweightMessageQueueLibrary:
 
-	def __init__(self, url):
-		self._url = url
+	def __init__(self, address='localhost', port=3000):
+		self._url = 'http://%s:%s' % (address, port)
 
 	@staticmethod
 	def version():
-		return '1.0.0'
+		return '1.0.1'
 
 	@staticmethod
 	def compatible_version():
-		return '1.0.0'
+		return '1.1.0'
 
 	@staticmethod
 	def copyright():
 		print('''
 			***
-			Lightweight Message Queue Library, version 1.0.0
+			Lightweight Message Queue Library, version 1.0.1
 			
 			Copyright (C) 2018 Misam Saki, http://misam.ir
 			Do not Change, Alter, or Remove this Licence
@@ -133,7 +133,7 @@ class LightweightMessageQueueLibrary:
 
 
 if __name__ == "__main__":
-	lmql = LightweightMessageQueueLibrary('http://127.0.0.1:3000')
+	lmql = LightweightMessageQueueLibrary()
 	res = lmql.help()
 	if type(res) is not Exception:
 		print(res)
