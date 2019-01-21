@@ -1,5 +1,5 @@
 /*
- Lightweight Message Queue, version 1.1.1
+ Lightweight Message Queue, version 1.2.0
 
  Copyright (C) 2018 Misam Saki, http://misam.ir
  Do not Change, Alter, or Remove this Licence
@@ -9,33 +9,31 @@ package main
 
 import (
 	"bufio"
+	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
+	_ "github.com/go-sql-driver/mysql"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"strconv"
-	"encoding/base64"
+	"strings"
 	"time"
 )
 
 type Config struct {
-	Debug bool `json:"debug"`
-	BindAddressList[] string `json:"bind_address_list"`
-	IpWhiteList[] string `json:"ip_white_list"`
-	RecoveryFilePath string `json:"recovery_file_path"`
-	FileBasePath string `json:"file_base_path"`
-	MessageChannelSize int `json:"message_channel_size"`
-	RecoveryChannelSize int `json:"recovery_channel_size"`
+	Debug                bool     `json:"debug"`
+	BindAddressList      []string `json:"bind_address_list"`
+	IpWhiteList          []string `json:"ip_white_list"`
+	RecoveryFilePath     string   `json:"recovery_file_path"`
+	FileBasePath         string   `json:"file_base_path"`
+	MsqlConnectionString string   `json:"msql_connection_string"`
+	MessageChannelSize   int      `json:"message_channel_size"`
+	RecoveryChannelSize  int      `json:"recovery_channel_size"`
 }
-
-const (
-	TEXT_MESSAGE_TYPE	byte = 0
-	FILE_MESSAGE_TYPE	byte = 1
-)
 
 func getRecovery(method string, queueName string, message string) string {
 	return method + " " + queueName + " " + message
@@ -113,17 +111,17 @@ func writingRecovery(recoveryCh chan string, config Config) {
 	if err != nil {
 		log.Println(err)
 	}
+	defer file.Close()
 	for recovery := range recoveryCh {
 		_, err := file.WriteString(base64.StdEncoding.EncodeToString([]byte(recovery)) + "\n")
 		if err != nil {
 			log.Println(err)
 		}
 	}
-	file.Close()
 }
 
 func listHandler(queues map[string]chan string) gin.HandlerFunc {
-	return func (context *gin.Context) {
+	return func(context *gin.Context) {
 		var queueNamesLines = ""
 		for queueName := range queues {
 			queueNamesLines += queueName + "\n"
@@ -134,7 +132,7 @@ func listHandler(queues map[string]chan string) gin.HandlerFunc {
 }
 
 func countHandler(queues map[string]chan string) gin.HandlerFunc {
-	return func (context *gin.Context) {
+	return func(context *gin.Context) {
 		queueName := context.Param("queue")
 		_, ok := queues[queueName]
 		if !ok {
@@ -148,7 +146,7 @@ func countHandler(queues map[string]chan string) gin.HandlerFunc {
 }
 
 func skipHandler(queues map[string]chan string) gin.HandlerFunc {
-	return func (context *gin.Context) {
+	return func(context *gin.Context) {
 		queueName := context.Param("queue")
 		_, ok := queues[queueName]
 		if !ok {
@@ -163,10 +161,10 @@ func skipHandler(queues map[string]chan string) gin.HandlerFunc {
 			context.Abort()
 			return
 		}
-		var messages[] string
+		var messages []string
 		for i := 0; i < n; i++ {
 			select {
-			case message := <- queues[queueName]:
+			case message := <-queues[queueName]:
 				messages = append(messages, message)
 				queues[queueName] <- message
 			default:
@@ -179,7 +177,7 @@ func skipHandler(queues map[string]chan string) gin.HandlerFunc {
 }
 
 func setHandler(queues map[string]chan string, recoveryCh chan string, config Config) gin.HandlerFunc {
-	return func (context *gin.Context) {
+	return func(context *gin.Context) {
 		queueName := context.Param("queue")
 		_, ok := queues[queueName]
 		if !ok {
@@ -192,19 +190,44 @@ func setHandler(queues map[string]chan string, recoveryCh chan string, config Co
 			context.Abort()
 			return
 		}
-		messageType := TEXT_MESSAGE_TYPE
 		messageParts := strings.SplitN(message, ":", 2)
 		if len(messageParts) > 1 {
 			switch messageParts[0] {
 			case "file":
-				messageType = FILE_MESSAGE_TYPE
-			}
-		}
-		if messageType == FILE_MESSAGE_TYPE {
-			if _, err := os.Stat(config.FileBasePath + messageParts[1]); os.IsNotExist(err) {
-				context.String(http.StatusNotAcceptable, "File not exists!")
-				context.Abort()
-				return
+				if _, err := os.Stat(config.FileBasePath + messageParts[1]); os.IsNotExist(err) {
+					context.String(http.StatusNotAcceptable, "File not exists!")
+					context.Abort()
+					return
+				}
+			case "mysql":
+				recordName := strings.SplitN(messageParts[1], "/", 2)
+				if len(recordName) != 2 {
+					context.String(http.StatusNotAcceptable, "Record name not valid!")
+					context.Abort()
+					return
+				}
+				table, id := recordName[0], recordName[1]
+				db, err := sql.Open("mysql", config.MsqlConnectionString)
+				if err != nil {
+					log.Println(err)
+					context.String(http.StatusInternalServerError, "Internal server error!")
+					context.Abort()
+					return
+				}
+				defer db.Close()
+				rows, err := db.Query("SELECT data FROM " + table + " WHERE id = " + id + ";")
+				if err != nil {
+					log.Println(err)
+					context.String(http.StatusInternalServerError, "Internal server error!")
+					context.Abort()
+					return
+				}
+				defer rows.Close()
+				if !rows.Next() {
+					context.String(http.StatusNotAcceptable, "Record not exists!")
+					context.Abort()
+					return
+				}
 			}
 		}
 		uid := strconv.FormatInt(time.Now().UnixNano(), 10)
@@ -212,7 +235,7 @@ func setHandler(queues map[string]chan string, recoveryCh chan string, config Co
 		select {
 		case queues[queueName] <- message:
 			select {
-			case recoveryCh <-  getRecovery("SET", queueName, message):
+			case recoveryCh <- getRecovery("SET", queueName, message):
 				context.String(http.StatusOK, "OK.")
 				return
 			default:
@@ -228,8 +251,8 @@ func setHandler(queues map[string]chan string, recoveryCh chan string, config Co
 	}
 }
 
-func getHandler(queues map[string]chan string, recoveryCh chan string, config Config) gin.HandlerFunc {
-	return func (context *gin.Context) {
+func getHandler(queues map[string]chan string, recoveryCh chan string) gin.HandlerFunc {
+	return func(context *gin.Context) {
 		queueName := context.Param("queue")
 		_, ok := queues[queueName]
 		if !ok {
@@ -238,7 +261,7 @@ func getHandler(queues map[string]chan string, recoveryCh chan string, config Co
 			return
 		}
 		select {
-		case message := <- queues[queueName]:
+		case message := <-queues[queueName]:
 			select {
 			case recoveryCh <- getRecovery("GET", queueName, message):
 				messageParts := strings.SplitN(message, "@", 2)
@@ -260,46 +283,82 @@ func getHandler(queues map[string]chan string, recoveryCh chan string, config Co
 }
 
 func responseMessage(context *gin.Context, config Config, uid string, message string) {
-	messageType := TEXT_MESSAGE_TYPE
 	messageParts := strings.SplitN(message, ":", 2)
 	if len(messageParts) > 1 {
 		switch messageParts[0] {
 		case "file":
-			messageType = FILE_MESSAGE_TYPE
-		}
-	}
-	switch messageType {
-	case FILE_MESSAGE_TYPE:
-		bytes, err := ioutil.ReadFile(config.FileBasePath + messageParts[1])
-		if err != nil {
-			log.Println(err)
-			if os.IsNotExist(err) {
-				context.String(http.StatusNotFound, "File not found!")
+			bytes, err := ioutil.ReadFile(config.FileBasePath + messageParts[1])
+			if err != nil {
+				log.Println(err)
+				if os.IsNotExist(err) {
+					context.String(http.StatusNotFound, "File not found!")
+					context.Abort()
+					return
+				}
+				context.String(http.StatusInternalServerError, "Internal server error!")
 				context.Abort()
 				return
 			}
-			context.String(http.StatusInternalServerError, "Internal server error!")
-			context.Abort()
+			if uid != "" {
+				context.Header("Uid", uid)
+			}
+			context.Header("Message", message)
+			contentType := http.DetectContentType(bytes)
+			context.Data(http.StatusOK, contentType, bytes)
+			return
+		case "mysql":
+			recordName := strings.SplitN(messageParts[1], "/", 2)
+			if len(recordName) != 2 {
+				context.String(http.StatusNotAcceptable, "Record name not valid!")
+				context.Abort()
+				return
+			}
+			table, id := recordName[0], recordName[1]
+			db, err := sql.Open("mysql", config.MsqlConnectionString)
+			if err != nil {
+				log.Println(err)
+				context.String(http.StatusInternalServerError, "Internal server error!")
+				context.Abort()
+				return
+			}
+			defer db.Close()
+			rows, err := db.Query("SELECT data FROM " + table + " WHERE id = " + id + ";")
+			if err != nil {
+				log.Println(err)
+				context.String(http.StatusInternalServerError, "Internal server error!")
+				context.Abort()
+				return
+			}
+			defer rows.Close()
+			if rows.Next() {
+				var data []byte
+				err = rows.Scan(&data)
+				if err != nil {
+					log.Println(err)
+					context.String(http.StatusInternalServerError, "Internal server error!")
+					context.Abort()
+					return
+				}
+				context.Header("Message", id)
+				context.Data(http.StatusOK, "text/plain", data)
+				return
+			} else {
+				context.String(http.StatusNotAcceptable, "Record not exists!")
+				context.Abort()
+				return
+			}
+		default:
+			if uid != "" {
+				context.Header("Uid", uid)
+			}
+			context.String(http.StatusOK, message)
 			return
 		}
-		if uid != "" {
-			context.Header("Uid", uid)
-		}
-		context.Header("Message", message)
-		contentType := http.DetectContentType(bytes)
-		context.Data(http.StatusOK, contentType, bytes)
-		return
-	default:
-		if uid != "" {
-			context.Header("Uid", uid)
-		}
-		context.String(http.StatusOK, message)
-		return
 	}
 }
 
 func fetchHandler(queues map[string]chan string, recoveryCh chan string, config Config) gin.HandlerFunc {
-	return func (context *gin.Context) {
+	return func(context *gin.Context) {
 		queueName := context.Param("queue")
 		_, ok := queues[queueName]
 		if !ok {
@@ -308,7 +367,7 @@ func fetchHandler(queues map[string]chan string, recoveryCh chan string, config 
 			return
 		}
 		select {
-		case message := <- queues[queueName]:
+		case message := <-queues[queueName]:
 			select {
 			case recoveryCh <- getRecovery("GET", queueName, message):
 				messageParts := strings.SplitN(message, "@", 2)
@@ -329,7 +388,7 @@ func fetchHandler(queues map[string]chan string, recoveryCh chan string, config 
 }
 
 func downloadHandler(config Config) gin.HandlerFunc {
-	return func (context *gin.Context) {
+	return func(context *gin.Context) {
 		message := context.Param("message")
 		message = message[1:]
 		if message == "" {
@@ -343,8 +402,8 @@ func downloadHandler(config Config) gin.HandlerFunc {
 	}
 }
 
-func deleteHandler(queues map[string]chan string, recoveryCh chan string, config Config) gin.HandlerFunc {
-	return func (context *gin.Context) {
+func deleteHandler(queues map[string]chan string, recoveryCh chan string) gin.HandlerFunc {
+	return func(context *gin.Context) {
 		queueName := context.Param("queue")
 		_, ok := queues[queueName]
 		if !ok {
@@ -366,7 +425,7 @@ func deleteHandler(queues map[string]chan string, recoveryCh chan string, config
 }
 
 func iPWhiteList(whitelist map[string]bool) gin.HandlerFunc {
-	return func (context *gin.Context) {
+	return func(context *gin.Context) {
 		if !whitelist[context.ClientIP()] {
 			context.String(http.StatusForbidden, "Permission denied!")
 			context.Abort()
@@ -413,12 +472,12 @@ func main() {
 	router.GET("/count/:queue", countHandler(queues))
 	router.GET("/skip/:queue/:number", skipHandler(queues))
 	router.GET("/set/:queue/*message", setHandler(queues, recoveryCh, config))
-	router.GET("/get/:queue", getHandler(queues, recoveryCh, config))
+	router.GET("/get/:queue", getHandler(queues, recoveryCh))
 	router.GET("/fetch/:queue", fetchHandler(queues, recoveryCh, config))
 	router.GET("/download/*message", downloadHandler(config))
-	router.GET("/delete/:queue", deleteHandler(queues, recoveryCh, config))
+	router.GET("/delete/:queue", deleteHandler(queues, recoveryCh))
 
-	router.GET("/help", func (context *gin.Context) {
+	router.GET("/help", func(context *gin.Context) {
 		help := "Methods:\n\n"
 		help += "GET /list\n" +
 			"\tList of the queues.\n\n"
@@ -435,18 +494,26 @@ func main() {
 		help += "GET /download/[message]\n" +
 			"\tDownload content of the message.\n\n"
 		help += "GET /delete/[queue]\n" +
-			"\tDelete the queue.\n"
+			"\tDelete the queue.\n\n"
+
+		help += "Message types:\n\n"
+		help += "[message]\n" +
+			"\tPure text message (for short messages).\n\n"
+		help += "file:[file_path]\n" +
+			"\tFile content as the message.\n\n"
+		help += "mysql:[table_name]/[id]\n" +
+			"\tMysql record as the message ('id' field as identification and 'data' field as content).\n"
 		context.String(http.StatusOK, help)
 		return
 	})
-	router.GET("/version", func (context *gin.Context) {
-		context.String(http.StatusOK, "1.1.1")
+	router.GET("/version", func(context *gin.Context) {
+		context.String(http.StatusOK, "1.2.0")
 		return
 	})
-	router.GET("/copyright", func (context *gin.Context) {
+	router.GET("/copyright", func(context *gin.Context) {
 		copyright := `
 			***
-			Lightweight Message Queue, version 1.1.1
+			Lightweight Message Queue, version 1.2.0
 
 			Copyright (C) 2018 Misam Saki, http://misam.ir
 			Do not Change, Alter, or Remove this Licence
@@ -457,8 +524,10 @@ func main() {
 	})
 
 	i := 0
-	for ; i < len(config.BindAddressList) - 1; i++ {
+	for ; i < len(config.BindAddressList)-1; i++ {
 		go router.Run(config.BindAddressList[i])
 	}
-	router.Run(config.BindAddressList[i])
+	if err = router.Run(config.BindAddressList[i]); err != nil {
+		log.Println(err)
+	}
 }
