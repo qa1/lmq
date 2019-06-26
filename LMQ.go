@@ -435,12 +435,12 @@ func iPWhiteList(whitelist map[string]bool) gin.HandlerFunc {
 }
 
 func main() {
-	config_path := "config.json"
+	configPath := "config.json"
 	if len(os.Args) > 1 {
-		config_path = os.Args[1]
+		configPath = os.Args[1]
 	}
 
-	configBytes, err := ioutil.ReadFile(config_path)
+	configBytes, err := ioutil.ReadFile(configPath)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -483,9 +483,9 @@ func main() {
 			"\tList of the queues.\n\n"
 		help += "GET /count/[queue]\n" +
 			"\tNumber of messages in a queue.\n\n"
-		help += "GET /skip/[queue/[number]\n" +
+		help += "GET /skip/[queue]/[number]\n" +
 			"\tSkip messages in the queue.\n\n"
-		help += "GET /set/[queue/[message]\n" +
+		help += "GET /set/[queue]/[message]\n" +
 			"\tSet a message in the queue.\n\n"
 		help += "GET /get/[queue]\n" +
 			"\tGet a message in the queue.\n\n"
@@ -528,6 +528,6 @@ func main() {
 		go router.Run(config.BindAddressList[i])
 	}
 	if err = router.Run(config.BindAddressList[i]); err != nil {
-		log.Println(err)
+		panic(err)
 	}
 }
