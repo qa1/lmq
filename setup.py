@@ -5,14 +5,14 @@ import re
 with open('README.md') as f:
     long_description = f.read()
 
-with open('LMQL/version.py', 'r', encoding='utf-8') as f:
+with open('python_library/version.py', 'r', encoding='utf-8') as f:
     version = re.search(r"^__version__\s*=\s*'(.*)'.*$", f.read(), flags=re.MULTILINE).group(1)
 
 setup(
-    name='LMQL',
+    name='LMQ',
     version=version,
-    packages=['LMQL'],
-    description='Lightweight Message Queue Library',
+    packages=['python_library'],
+    description='Lightweight Message Queue',
     long_description=long_description,
     author='Misam saki',
     author_email='misamplus@gmail.com',
