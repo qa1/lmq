@@ -12,7 +12,7 @@ setup(
     name='LMQ',
     version=version,
     packages=['LMQ'],
-	package_dir={'libs/python': 'LMQ'}
+	package_dir={'libs/python': 'LMQ'},
     description='Lightweight Message Queue',
     long_description=long_description,
     author='Misam saki',
