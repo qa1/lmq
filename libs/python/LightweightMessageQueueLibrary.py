@@ -10,7 +10,6 @@ class LightweightMessageQueueLibrary:
 		if type(hosts) is not list:
 			hosts = [hosts]
 		self._hosts = hosts
-		self._round_robin_index = -1
 
 	def help(self, host_index=0):
 		req = requests.get('%s/help' % self._hosts[host_index])
@@ -47,51 +46,50 @@ class LightweightMessageQueueLibrary:
 		else:
 			raise Exception(req.status_code, req.text)
 
-	def get(self, queue, host_index=None):
-		if host_index is not None:
-			req = requests.get('%s/get/%s' % (self._hosts[host_index], queue))
-			if req.status_code == 200:
-				return {
-					'host_index': host_index,
-					'uid': req.headers.get('Uid', None),
-					'message': req.text
-				}
-			else:
-				raise Exception(req.status_code, req.text)
+	def get(self, queue, host_index=0):
+		req = requests.get('%s/get/%s' % (self._hosts[host_index], queue))
+		if req.status_code == 200:
+			return {
+				'uid': req.headers.get('Uid', None),
+				'message': req.text
+			}
 		else:
-			last_exception = Exception('Nothing!')
-			indices = list(range(self._round_robin_index + 1, len(self._hosts))) + list(range(0, self._round_robin_index + 1))
-			for index in indices:
-				self._round_robin_index = index
-				try:
-					return self.get(queue, index)
-				except Exception as exception:
-					last_exception = exception
-			raise last_exception
+			raise Exception(req.status_code, req.text)
 
-	def fetch(self, queue, host_index=None):
-		if host_index is not None:
-			req = requests.get('%s/fetch/%s' % (self._hosts[host_index], queue))
-			if req.status_code == 200:
-				return {
-					'host_index': host_index,
-					'uid': req.headers.get('Uid', None),
-					'message': req.headers.get('Message', None),
-					'content': req.content
-				}
-			else:
-				raise Exception(req.status_code, req.text)
+	def circle_get(self, queues, last_index=0):
+		last_exception = Exception('Nothing!')
+		indices = list(range(last_index + 1, len(queues))) + list(range(0, last_index + 1))
+		for index in indices:
+			try:
+				host_index, queue = queues[index]
+				output = self.get(queue, host_index)
+				return index, output
+			except Exception as exception:
+				last_exception = exception
+		raise last_exception
+
+	def fetch(self, queue, host_index=0):
+		req = requests.get('%s/fetch/%s' % (self._hosts[host_index], queue))
+		if req.status_code == 200:
+			return {
+				'uid': req.headers.get('Uid', None),
+				'message': req.headers.get('Message', None),
+				'content': req.content
+			}
 		else:
-			last_exception = Exception('Nothing!')
-			indices = list(range(self._round_robin_index + 1, len(self._hosts))) + list(range(0, self._round_robin_index + 1))
-			for index in indices:
-				self._round_robin_index = index
-				try:
-					output = self.fetch(queue, index)
-					return output
-				except Exception as exception:
-					last_exception = exception
-			raise last_exception
+			raise Exception(req.status_code, req.text)
+
+	def circle_fetch(self, queues, last_index=0):
+		last_exception = Exception('Nothing!')
+		indices = list(range(last_index + 1, len(queues))) + list(range(0, last_index + 1))
+		for index in indices:
+			try:
+				host_index, queue = queues[index]
+				output = self.fetch(queue, host_index)
+				return index, output
+			except Exception as exception:
+				last_exception = exception
+		raise last_exception
 
 	def download(self, message, host_index=0):
 		req = requests.get('%s/download/%s' % (self._hosts[host_index], message))
