@@ -61,7 +61,9 @@ class LightweightMessageQueueLibrary:
 		indices = list(range(last_index + 1, len(queues))) + list(range(0, last_index + 1))
 		for index in indices:
 			try:
-				host_index, queue = queues[index]
+				host_index, queue, active = queues[index]
+				if not active:
+				    continue
 				output = self.get(queue, host_index)
 				return index, output
 			except Exception as exception:
@@ -84,7 +86,9 @@ class LightweightMessageQueueLibrary:
 		indices = list(range(last_index + 1, len(queues))) + list(range(0, last_index + 1))
 		for index in indices:
 			try:
-				host_index, queue = queues[index]
+				host_index, queue, active = queues[index]
+				if not active:
+				    continue
 				output = self.fetch(queue, host_index)
 				return index, output
 			except Exception as exception:
