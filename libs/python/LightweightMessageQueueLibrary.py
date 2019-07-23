@@ -63,7 +63,7 @@ class LightweightMessageQueueLibrary:
 			try:
 				host_index, queue, active = queues[index]
 				if not active:
-				    continue
+					continue
 				output = self.get(queue, host_index)
 				return index, output
 			except Exception as exception:
@@ -88,7 +88,7 @@ class LightweightMessageQueueLibrary:
 			try:
 				host_index, queue, active = queues[index]
 				if not active:
-				    continue
+					continue
 				output = self.fetch(queue, host_index)
 				return index, output
 			except Exception as exception:

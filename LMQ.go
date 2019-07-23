@@ -1,3 +1,10 @@
+/*
+ Lightweight Message Queue, version 1.2.0
+
+ Copyright (C) 2018 Misam Saki, http://misam.ir
+ Do not Change, Alter, or Remove this Licence
+*/
+
 package main
 
 import (
@@ -497,6 +504,22 @@ func main() {
 		help += "mysql:[table_name]/[id]\n" +
 			"\tMysql record as the message ('id' field as identification and 'data' field as content).\n"
 		context.String(http.StatusOK, help)
+		return
+	})
+	router.GET("/version", func(context *gin.Context) {
+		context.String(http.StatusOK, "1.2.0")
+		return
+	})
+	router.GET("/copyright", func(context *gin.Context) {
+		copyright := `
+			***
+			Lightweight Message Queue, version 1.2.0
+
+			Copyright (C) 2018 Misam Saki, http://misam.ir
+			Do not Change, Alter, or Remove this Licence
+			***
+		`
+		context.String(http.StatusOK, strings.Replace(copyright, "\t", "", -1))
 		return
 	})
 
