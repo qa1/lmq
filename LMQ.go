@@ -18,14 +18,14 @@ import (
 )
 
 type Config struct {
-	Debug                bool     `json:"debug"`
-	BindAddressList      []string `json:"bind_address_list"`
-	IpWhiteList          []string `json:"ip_white_list"`
-	RecoveryFilePath     string   `json:"recovery_file_path"`
-	FileBasePath         string   `json:"file_base_path"`
-	MsqlConnectionString string   `json:"msql_connection_string"`
-	MessageChannelSize   int      `json:"message_channel_size"`
-	RecoveryChannelSize  int      `json:"recovery_channel_size"`
+	Debug					bool		`json:"debug"`
+	BindAddressList			[]string	`json:"bind_address_list"`
+	IpWhiteList				[]string	`json:"ip_white_list"`
+	RecoveryFilePath		string		`json:"recovery_file_path"`
+	FileBasePath			string		`json:"file_base_path"`
+	MsqlConnectionString	string		`json:"msql_connection_string"`
+	MessageChannelInitSize	int			`json:"message_channel_init_size"`
+	RecoveryChannelInitSize	int			`json:"recovery_channel_init_size"`
 }
 
 func getRecovery(method string, queueName string, message string) string {
@@ -78,8 +78,10 @@ func initialRecovery(queues map[string]chan string, recoveryCh chan string, conf
 		}
 	}
 	for queueName, queueMap := range queuesMap {
-		queues[queueName] = make(chan string, config.MessageChannelSize)
+		queues[queueName] = make(chan string, config.MessageChannelInitSize)
 		for messageKey, message := range queueMap {
+			queues[queueName] = increaseChannel(queues[queueName], config.MessageChannelInitSize, 1000)
+			recoveryCh = increaseChannel(recoveryCh, config.RecoveryChannelInitSize, 1000)
 			select {
 			case queues[queueName] <- message:
 				select {
@@ -169,13 +171,26 @@ func skipHandler(queues map[string]chan string) gin.HandlerFunc {
 	}
 }
 
+func increaseChannel(ch chan string, size int, threshold int) chan string {
+	if cap(ch) - len(ch) < threshold {
+		out := make(chan string, cap(ch) + size)
+		for v := range ch {
+			out <- v
+		}
+		return out
+	} else {
+		return ch
+	}
+}
+
 func setHandler(queues map[string]chan string, recoveryCh chan string, config Config) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		queueName := context.Param("queue")
 		_, ok := queues[queueName]
 		if !ok {
-			queues[queueName] = make(chan string, config.MessageChannelSize)
+			queues[queueName] = make(chan string, config.MessageChannelInitSize)
 		}
+		queues[queueName] = increaseChannel(queues[queueName], config.MessageChannelInitSize, 1000)
 		message := context.Param("message")
 		message = message[1:]
 		if message == "" {
@@ -444,7 +459,7 @@ func main() {
 	}
 
 	queues := make(map[string]chan string)
-	recoveryCh := make(chan string, config.RecoveryChannelSize)
+	recoveryCh := make(chan string, config.RecoveryChannelInitSize)
 
 	initialRecovery(queues, recoveryCh, config)
 
