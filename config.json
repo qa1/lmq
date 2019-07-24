@@ -5,6 +5,5 @@
 	"recovery_file_path": "./LMQ.rec",
 	"file_base_path": "./data/",
 	"msql_connection_string": "user:pass@tcp(127.0.0.1:3306)/test",
-	"message_channel_init_size": 1000000,
-	"recovery_channel_init_size": 1000
+	"queue_init_size": 1000000
 }

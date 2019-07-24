@@ -24,16 +24,34 @@ type Config struct {
 	RecoveryFilePath		string		`json:"recovery_file_path"`
 	FileBasePath			string		`json:"file_base_path"`
 	MsqlConnectionString	string		`json:"msql_connection_string"`
-	MessageChannelInitSize	int			`json:"message_channel_init_size"`
-	RecoveryChannelInitSize	int			`json:"recovery_channel_init_size"`
+	QueueInitSize			int			`json:"queue_init_size"`
 }
 
 func getRecovery(method string, queueName string, message string) string {
 	return method + " " + queueName + " " + message
 }
 
+func increaseQueueSize(queues map[string]chan string, queueName string, size int) {
+	threshold := size / 2
+	if cap(queues[queueName]) - len(queues[queueName]) < threshold {
+		out := make(chan string, cap(queues[queueName]) + size)
+		for v := range queues[queueName] {
+			out <- v
+			if len(queues[queueName]) == 0 {
+				break
+			}
+		}
+		queues[queueName] = out
+	}
+}
+
 func initialRecovery(queues map[string]chan string, recoveryCh chan string, config Config) {
-	file, err := os.OpenFile(config.RecoveryFilePath, os.O_RDONLY, 0644)
+	err := os.Rename(config.RecoveryFilePath, config.RecoveryFilePath + ".tmp")
+	if err != nil {
+		log.Println(err)
+	}
+	go writingRecovery(recoveryCh, config)
+	file, err := os.OpenFile(config.RecoveryFilePath + ".tmp", os.O_RDONLY, 0644)
 	if err != nil {
 		log.Println(err)
 		return
@@ -78,10 +96,9 @@ func initialRecovery(queues map[string]chan string, recoveryCh chan string, conf
 		}
 	}
 	for queueName, queueMap := range queuesMap {
-		queues[queueName] = make(chan string, config.MessageChannelInitSize)
+		queues[queueName] = make(chan string, config.QueueInitSize)
 		for messageKey, message := range queueMap {
-			queues[queueName] = increaseChannel(queues[queueName], config.MessageChannelInitSize, 1000)
-			recoveryCh = increaseChannel(recoveryCh, config.RecoveryChannelInitSize, 1000)
+			increaseQueueSize(queues, queueName, config.QueueInitSize)
 			select {
 			case queues[queueName] <- message:
 				select {
@@ -95,7 +112,8 @@ func initialRecovery(queues map[string]chan string, recoveryCh chan string, conf
 			}
 		}
 	}
-	err = os.Remove(config.RecoveryFilePath)
+	file.Close()
+	err = os.Remove(config.RecoveryFilePath + ".tmp")
 	if err != nil {
 		log.Println(err)
 	}
@@ -171,26 +189,14 @@ func skipHandler(queues map[string]chan string) gin.HandlerFunc {
 	}
 }
 
-func increaseChannel(ch chan string, size int, threshold int) chan string {
-	if cap(ch) - len(ch) < threshold {
-		out := make(chan string, cap(ch) + size)
-		for v := range ch {
-			out <- v
-		}
-		return out
-	} else {
-		return ch
-	}
-}
-
 func setHandler(queues map[string]chan string, recoveryCh chan string, config Config) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		queueName := context.Param("queue")
 		_, ok := queues[queueName]
 		if !ok {
-			queues[queueName] = make(chan string, config.MessageChannelInitSize)
+			queues[queueName] = make(chan string, config.QueueInitSize)
 		}
-		queues[queueName] = increaseChannel(queues[queueName], config.MessageChannelInitSize, 1000)
+		increaseQueueSize(queues, queueName, config.QueueInitSize)
 		message := context.Param("message")
 		message = message[1:]
 		if message == "" {
@@ -459,11 +465,9 @@ func main() {
 	}
 
 	queues := make(map[string]chan string)
-	recoveryCh := make(chan string, config.RecoveryChannelInitSize)
+	recoveryCh := make(chan string, 1000)
 
 	initialRecovery(queues, recoveryCh, config)
-
-	go writingRecovery(recoveryCh, config)
 
 	if !config.Debug {
 		gin.SetMode(gin.ReleaseMode)
@@ -484,36 +488,6 @@ func main() {
 	router.GET("/fetch/:queue", fetchHandler(queues, recoveryCh, config))
 	router.GET("/download/*message", downloadHandler(config))
 	router.GET("/delete/:queue", deleteHandler(queues, recoveryCh))
-
-	router.GET("/help", func(context *gin.Context) {
-		help := "Methods:\n\n"
-		help += "GET /list\n" +
-			"\tList of the queues.\n\n"
-		help += "GET /count/[queue]\n" +
-			"\tNumber of messages in a queue.\n\n"
-		help += "GET /skip/[queue]/[number]\n" +
-			"\tSkip messages in the queue.\n\n"
-		help += "GET /set/[queue]/[message]\n" +
-			"\tSet a message in the queue.\n\n"
-		help += "GET /get/[queue]\n" +
-			"\tGet a message in the queue.\n\n"
-		help += "GET /fetch/[queue]\n" +
-			"\tFetch a message with content in a queue.\n\n"
-		help += "GET /download/[message]\n" +
-			"\tDownload content of the message.\n\n"
-		help += "GET /delete/[queue]\n" +
-			"\tDelete the queue.\n\n"
-
-		help += "Message types:\n\n"
-		help += "[message]\n" +
-			"\tPure text message (for short messages).\n\n"
-		help += "file:[file_path]\n" +
-			"\tFile content as the message.\n\n"
-		help += "mysql:[table_name]/[id]\n" +
-			"\tMysql record as the message ('id' field as identification and 'data' field as content).\n"
-		context.String(http.StatusOK, help)
-		return
-	})
 
 	i := 0
 	for ; i < len(config.BindAddressList)-1; i++ {
