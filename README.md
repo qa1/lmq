@@ -4,7 +4,7 @@ A lightweight message queue to work with short messages or content references as
 
 Version 1.4.0
 
-#Methods
+# Methods
 
 - GET /list
     > List of the queues.
@@ -30,7 +30,7 @@ Version 1.4.0
 - GET /delete/[queue]
 	> Delete the queue.
 
-#Message types
+# Message types
 
 - [message]
     > Pure text message (for short messages).
@@ -41,7 +41,7 @@ Version 1.4.0
 - mysql:[table_name]/[id]
 	> Mysql record as the message ('id' field as identification and 'data' field as content).
 	
-#License
+# License
 
 Copyright (C) 2018 Misam Saki, http://misam.ir
 
