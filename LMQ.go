@@ -21,10 +21,11 @@ type Config struct {
 	Debug					bool		`json:"debug"`
 	BindAddressList			[]string	`json:"bind_address_list"`
 	IpWhiteList				[]string	`json:"ip_white_list"`
-	RecoveryFilePath		string		`json:"recovery_file_path"`
 	FileBasePath			string		`json:"file_base_path"`
 	MsqlConnectionString	string		`json:"msql_connection_string"`
 	QueueInitSize			int			`json:"queue_init_size"`
+	RecoveryDirPath			string		`json:"recovery_dir_path"`
+	RecoveryFileSize		int			`json:"recovery_file_size"`
 }
 
 func getRecovery(method string, queueName string, message string) string {
@@ -46,53 +47,57 @@ func increaseQueueSize(queues map[string]chan string, queueName string, size int
 }
 
 func initialRecovery(queues map[string]chan string, recoveryCh chan string, config Config) {
-	err := os.Rename(config.RecoveryFilePath, config.RecoveryFilePath + ".tmp")
+	filenames, err := ioutil.ReadDir(config.RecoveryDirPath)
 	if err != nil {
-		log.Println(err)
-	}
-	go writingRecovery(recoveryCh, config)
-	file, err := os.OpenFile(config.RecoveryFilePath + ".tmp", os.O_RDONLY, 0644)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	if err := scanner.Err(); err != nil {
-		log.Println(err)
+		log.Fatalln(err)
 	}
 	var queuesMap = map[string]map[string]string{}
-	for scanner.Scan() {
-		lineBase64 := scanner.Text()
-		lineBytes, err := base64.StdEncoding.DecodeString(lineBase64)
+	for _, filename := range filenames {
+		file, err := os.OpenFile(config.RecoveryDirPath + filename.Name(), os.O_RDONLY, 0644)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		scanner := bufio.NewScanner(file)
+		if err := scanner.Err(); err != nil {
+			log.Println(err)
+		}
+		for scanner.Scan() {
+			lineBase64 := scanner.Text()
+			lineBytes, err := base64.StdEncoding.DecodeString(lineBase64)
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+			line := string(lineBytes)
+			parts := strings.SplitN(line, " ", 3)
+			if len(parts) < 3 {
+				log.Println("Incorrect recovery line.")
+				continue
+			}
+			method, queueName, message := parts[0], parts[1], parts[2]
+			_, ok := queuesMap[queueName]
+			if !ok {
+				queuesMap[queueName] = map[string]string{}
+			}
+			switch method {
+			case "SET":
+				queuesMap[queueName][message] = message
+			case "GET":
+				_, ok := queuesMap[queueName][message]
+				if ok {
+					delete(queuesMap[queueName], message)
+				}
+			case "DEL":
+				delete(queuesMap, queueName)
+			default:
+				log.Println("Incorrect recovery line.")
+				continue
+			}
+		}
+		file.Close()
+		err = os.Remove(config.RecoveryDirPath + filename.Name())
 		if err != nil {
 			log.Println(err)
-			continue
-		}
-		line := string(lineBytes)
-		parts := strings.SplitN(line, " ", 3)
-		if len(parts) < 3 {
-			log.Println("Incorrect recovery line.")
-			continue
-		}
-		method, queueName, message := parts[0], parts[1], parts[2]
-		_, ok := queuesMap[queueName]
-		if !ok {
-			queuesMap[queueName] = map[string]string{}
-		}
-		switch method {
-		case "SET":
-			queuesMap[queueName][message] = message
-		case "GET":
-			_, ok := queuesMap[queueName][message]
-			if ok {
-				delete(queuesMap[queueName], message)
-			}
-		case "DEL":
-			delete(queuesMap, queueName)
-		default:
-			log.Println("Incorrect recovery line.")
-			continue
 		}
 	}
 	for queueName, queueMap := range queuesMap {
@@ -112,15 +117,11 @@ func initialRecovery(queues map[string]chan string, recoveryCh chan string, conf
 			}
 		}
 	}
-	file.Close()
-	err = os.Remove(config.RecoveryFilePath + ".tmp")
-	if err != nil {
-		log.Println(err)
-	}
 }
 
 func writingRecovery(recoveryCh chan string, config Config) {
-	file, err := os.OpenFile(config.RecoveryFilePath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	recoveryFileSize := 0
+	file, err := os.OpenFile(config.RecoveryDirPath + strconv.FormatInt(time.Now().UnixNano(), 10), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		log.Println(err)
 	}
@@ -129,6 +130,15 @@ func writingRecovery(recoveryCh chan string, config Config) {
 		_, err := file.WriteString(base64.StdEncoding.EncodeToString([]byte(recovery)) + "\n")
 		if err != nil {
 			log.Println(err)
+		}
+		recoveryFileSize++
+		if recoveryFileSize >= config.RecoveryFileSize {
+			file.Close()
+			recoveryFileSize = 0
+			file, err = os.OpenFile(config.RecoveryDirPath + strconv.FormatInt(time.Now().UnixNano(), 10), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+			if err != nil {
+				log.Println(err)
+			}
 		}
 	}
 }
@@ -466,6 +476,8 @@ func main() {
 
 	queues := make(map[string]chan string)
 	recoveryCh := make(chan string, 1000)
+
+	go writingRecovery(recoveryCh, config)
 
 	initialRecovery(queues, recoveryCh, config)
 
