@@ -15,23 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	Utils "./utils"
 )
-
-type Config struct {
-	Debug					bool		`json:"debug"`
-	BindAddressList			[]string	`json:"bind_address_list"`
-	FileBasePath			string		`json:"file_base_path"`
-	MsqlConnectionString	string		`json:"msql_connection_string"`
-	QueueInitSize			int			`json:"queue_init_size"`
-	RecoveryDirPath			string		`json:"recovery_dir_path"`
-	RecoveryFileSize		int			`json:"recovery_file_size"`
-	IpWhiteList				[]string	`json:"ip_white_list"`
-	gzipEnable				bool		`json:"gzip_enable"`
-}
-
-func getRecovery(method string, queueName string, message string) string {
-	return method + " " + queueName + " " + message
-}
 
 func increaseQueueSize(queues map[string]chan string, queueName string, size int) {
 	threshold := size / 2
@@ -47,7 +32,7 @@ func increaseQueueSize(queues map[string]chan string, queueName string, size int
 	}
 }
 
-func initialRecovery(queues map[string]chan string, recoveryCh chan string, config Config) {
+func initialRecovery(queues map[string]chan string, config Utils.Config) {
 	filenames, err := ioutil.ReadDir(config.RecoveryDirPath)
 	if err != nil {
 		log.Fatalln(err)
@@ -96,10 +81,6 @@ func initialRecovery(queues map[string]chan string, recoveryCh chan string, conf
 			}
 		}
 		file.Close()
-		err = os.Remove(config.RecoveryDirPath + filename.Name())
-		if err != nil {
-			log.Println(err)
-		}
 	}
 	for queueName, queueMap := range queuesMap {
 		queues[queueName] = make(chan string, config.QueueInitSize)
@@ -108,12 +89,7 @@ func initialRecovery(queues map[string]chan string, recoveryCh chan string, conf
 				increaseQueueSize(queues, queueName, config.QueueInitSize)
 				select {
 				case queues[queueName] <- message:
-					select {
-					case recoveryCh <- getRecovery("SET", queueName, message):
-						log.Println("Initial ok SET " + queueName + " " + message)
-					default:
-						log.Println("Initial error (recovery) SET " + queueName + " " + message)
-					}
+					log.Println("Initial ok SET " + queueName + " " + message)
 				default:
 					log.Println("Initial error SET " + queueName + " " + message)
 				}
@@ -122,7 +98,7 @@ func initialRecovery(queues map[string]chan string, recoveryCh chan string, conf
 	}
 }
 
-func writingRecovery(recoveryCh chan string, config Config) {
+func writingRecovery(recoveryCh chan string, config Utils.Config) {
 	recoveryFileSize := 0
 	file, err := os.OpenFile(config.RecoveryDirPath + strconv.FormatInt(time.Now().UnixNano(), 10), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
@@ -202,7 +178,7 @@ func skipHandler(queues map[string]chan string) gin.HandlerFunc {
 	}
 }
 
-func setHandler(queues map[string]chan string, recoveryCh chan string, config Config) gin.HandlerFunc {
+func setHandler(queues map[string]chan string, recoveryCh chan string, config Utils.Config) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		queueName := context.Param("queue")
 		_, ok := queues[queueName]
@@ -260,7 +236,7 @@ func setHandler(queues map[string]chan string, recoveryCh chan string, config Co
 		select {
 		case queues[queueName] <- message:
 			select {
-			case recoveryCh <- getRecovery("SET", queueName, message):
+			case recoveryCh <- Utils.GetRecovery("SET", queueName, message):
 				context.String(http.StatusOK, "OK.")
 				return
 			default:
@@ -288,7 +264,7 @@ func getHandler(queues map[string]chan string, recoveryCh chan string) gin.Handl
 		select {
 		case message := <-queues[queueName]:
 			select {
-			case recoveryCh <- getRecovery("GET", queueName, message):
+			case recoveryCh <- Utils.GetRecovery("GET", queueName, message):
 				context.String(http.StatusOK, message)
 				return
 			default:
@@ -304,7 +280,7 @@ func getHandler(queues map[string]chan string, recoveryCh chan string) gin.Handl
 	}
 }
 
-func responseMessage(context *gin.Context, config Config, message string) {
+func responseMessage(context *gin.Context, config Utils.Config, message string) {
 	messageParts := strings.SplitN(message, ":", 2)
 	if len(messageParts) > 1 {
 		switch messageParts[0] {
@@ -373,7 +349,7 @@ func responseMessage(context *gin.Context, config Config, message string) {
 	}
 }
 
-func fetchHandler(queues map[string]chan string, recoveryCh chan string, config Config) gin.HandlerFunc {
+func fetchHandler(queues map[string]chan string, recoveryCh chan string, config Utils.Config) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		queueName := context.Param("queue")
 		_, ok := queues[queueName]
@@ -385,7 +361,7 @@ func fetchHandler(queues map[string]chan string, recoveryCh chan string, config 
 		select {
 		case message := <-queues[queueName]:
 			select {
-			case recoveryCh <- getRecovery("GET", queueName, message):
+			case recoveryCh <- Utils.GetRecovery("GET", queueName, message):
 				responseMessage(context, config, message)
 				return
 			default:
@@ -401,7 +377,7 @@ func fetchHandler(queues map[string]chan string, recoveryCh chan string, config 
 	}
 }
 
-func downloadHandler(config Config) gin.HandlerFunc {
+func downloadHandler(config Utils.Config) gin.HandlerFunc {
 	return func(context *gin.Context) {
 		message := context.Param("message")
 		message = message[1:]
@@ -427,7 +403,7 @@ func deleteHandler(queues map[string]chan string, recoveryCh chan string) gin.Ha
 		}
 		delete(queues, queueName)
 		select {
-		case recoveryCh <- getRecovery("DEL", queueName, ""):
+		case recoveryCh <- Utils.GetRecovery("DEL", queueName, ""):
 			context.String(http.StatusOK, "OK.")
 			return
 		default:
@@ -458,7 +434,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	var config Config
+	var config Utils.Config
 	err = json.Unmarshal(configBytes, &config)
 	if err != nil {
 		log.Fatal(err)
@@ -469,14 +445,14 @@ func main() {
 
 	go writingRecovery(recoveryCh, config)
 
-	initialRecovery(queues, recoveryCh, config)
+	initialRecovery(queues, config)
 
 	if !config.Debug {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	router := gin.Default()
 
-	if config.gzipEnable {
+	if config.GzipEnable {
 		router.Use(gzip.Gzip(gzip.DefaultCompression))
 	}
 
