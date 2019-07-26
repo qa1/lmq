@@ -20,12 +20,13 @@ import (
 type Config struct {
 	Debug					bool		`json:"debug"`
 	BindAddressList			[]string	`json:"bind_address_list"`
-	IpWhiteList				[]string	`json:"ip_white_list"`
 	FileBasePath			string		`json:"file_base_path"`
 	MsqlConnectionString	string		`json:"msql_connection_string"`
 	QueueInitSize			int			`json:"queue_init_size"`
 	RecoveryDirPath			string		`json:"recovery_dir_path"`
 	RecoveryFileSize		int			`json:"recovery_file_size"`
+	IpWhiteList				[]string	`json:"ip_white_list"`
+	gzipEnable				bool		`json:"gzip_enable"`
 }
 
 func getRecovery(method string, queueName string, message string) string {
@@ -475,12 +476,17 @@ func main() {
 	}
 	router := gin.Default()
 
-	router.Use(gzip.Gzip(gzip.DefaultCompression))
-	ipWhiteList := make(map[string]bool)
-	for _, ip := range config.IpWhiteList {
-		ipWhiteList[ip] = true
+	if config.gzipEnable {
+		router.Use(gzip.Gzip(gzip.DefaultCompression))
 	}
-	router.Use(iPWhiteList(ipWhiteList))
+
+	if len(config.IpWhiteList) > 0 {
+		ipWhiteList := make(map[string]bool)
+		for _, ip := range config.IpWhiteList {
+			ipWhiteList[ip] = true
+		}
+		router.Use(iPWhiteList(ipWhiteList))
+	}
 
 	router.GET("/list", listHandler(queues))
 	router.GET("/count/:queue", countHandler(queues))

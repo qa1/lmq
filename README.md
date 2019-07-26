@@ -2,7 +2,7 @@
 
 A lightweight message queue to work with short messages or content references as message.
 
-Version 1.4.2
+Version 1.4.3
 
 # Methods
 

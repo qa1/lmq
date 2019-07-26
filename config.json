@@ -1,10 +1,11 @@
 {
 	"debug": true,
 	"bind_address_list": ["127.0.0.1:3000"],
-	"ip_white_list": ["127.0.0.1"],
 	"file_base_path": "./data/",
 	"msql_connection_string": "user:pass@tcp(127.0.0.1:3306)/test",
 	"queue_init_size": 1000000,
 	"recovery_dir_path": "./rec/",
-	"recovery_file_size": 1000000
+	"recovery_file_size": 1000000,
+	"ip_white_list": ["127.0.0.1"],
+	"gzip_enable": true
 }
