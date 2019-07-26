@@ -51,7 +51,7 @@ func initialRecovery(queues map[string]chan string, recoveryCh chan string, conf
 	if err != nil {
 		log.Fatalln(err)
 	}
-	var queuesMap = map[string]map[string]string{}
+	var queuesMap = map[string]map[string]int{}
 	for _, filename := range filenames {
 		file, err := os.OpenFile(config.RecoveryDirPath + filename.Name(), os.O_RDONLY, 0644)
 		if err != nil {
@@ -75,18 +75,19 @@ func initialRecovery(queues map[string]chan string, recoveryCh chan string, conf
 				continue
 			}
 			method, queueName, message := parts[0], parts[1], parts[2]
-			_, ok := queuesMap[queueName]
-			if !ok {
-				queuesMap[queueName] = map[string]string{}
+			_, isQueueExist := queuesMap[queueName]
+			if !isQueueExist {
+				queuesMap[queueName] = map[string]int{}
+			}
+			count, isMessageExist := queuesMap[queueName][message]
+			if !isMessageExist {
+				count = 0
 			}
 			switch method {
 			case "SET":
-				queuesMap[queueName][message] = message
+				queuesMap[queueName][message] = count + 1
 			case "GET":
-				_, ok := queuesMap[queueName][message]
-				if ok {
-					delete(queuesMap[queueName], message)
-				}
+				queuesMap[queueName][message] = count - 1
 			case "DEL":
 				delete(queuesMap, queueName)
 			default:
@@ -102,18 +103,20 @@ func initialRecovery(queues map[string]chan string, recoveryCh chan string, conf
 	}
 	for queueName, queueMap := range queuesMap {
 		queues[queueName] = make(chan string, config.QueueInitSize)
-		for messageKey, message := range queueMap {
-			increaseQueueSize(queues, queueName, config.QueueInitSize)
-			select {
-			case queues[queueName] <- message:
+		for message, count := range queueMap {
+			for i := 0; i < count; i++ {
+				increaseQueueSize(queues, queueName, config.QueueInitSize)
 				select {
-				case recoveryCh <- getRecovery("SET", queueName, messageKey):
-					log.Println("Initial ok SET " + queueName + " " + messageKey)
+				case queues[queueName] <- message:
+					select {
+					case recoveryCh <- getRecovery("SET", queueName, message):
+						log.Println("Initial ok SET " + queueName + " " + message)
+					default:
+						log.Println("Initial error (recovery) SET " + queueName + " " + message)
+					}
 				default:
-					log.Println("Initial error (recovery) SET " + queueName + " " + messageKey)
+					log.Println("Initial error SET " + queueName + " " + message)
 				}
-			default:
-				log.Println("Initial error SET " + queueName + " " + messageKey)
 			}
 		}
 	}
@@ -254,8 +257,6 @@ func setHandler(queues map[string]chan string, recoveryCh chan string, config Co
 				}
 			}
 		}
-		uid := strconv.FormatInt(time.Now().UnixNano(), 10)
-		message = uid + "@" + message
 		select {
 		case queues[queueName] <- message:
 			select {
@@ -288,9 +289,6 @@ func getHandler(queues map[string]chan string, recoveryCh chan string) gin.Handl
 		case message := <-queues[queueName]:
 			select {
 			case recoveryCh <- getRecovery("GET", queueName, message):
-				messageParts := strings.SplitN(message, "@", 2)
-				uid, message := messageParts[0], messageParts[1]
-				context.Header("Uid", uid)
 				context.String(http.StatusOK, message)
 				return
 			default:
@@ -306,7 +304,7 @@ func getHandler(queues map[string]chan string, recoveryCh chan string) gin.Handl
 	}
 }
 
-func responseMessage(context *gin.Context, config Config, uid string, message string) {
+func responseMessage(context *gin.Context, config Config, message string) {
 	messageParts := strings.SplitN(message, ":", 2)
 	if len(messageParts) > 1 {
 		switch messageParts[0] {
@@ -322,9 +320,6 @@ func responseMessage(context *gin.Context, config Config, uid string, message st
 				context.String(http.StatusInternalServerError, "Internal server error!")
 				context.Abort()
 				return
-			}
-			if uid != "" {
-				context.Header("Uid", uid)
 			}
 			context.Header("Message", message)
 			contentType := http.DetectContentType(bytes)
@@ -363,7 +358,7 @@ func responseMessage(context *gin.Context, config Config, uid string, message st
 					context.Abort()
 					return
 				}
-				context.Header("Message", id)
+				context.Header("Message", message)
 				context.Data(http.StatusOK, "text/plain", data)
 				return
 			} else {
@@ -372,9 +367,6 @@ func responseMessage(context *gin.Context, config Config, uid string, message st
 				return
 			}
 		default:
-			if uid != "" {
-				context.Header("Uid", uid)
-			}
 			context.String(http.StatusOK, message)
 			return
 		}
@@ -394,9 +386,7 @@ func fetchHandler(queues map[string]chan string, recoveryCh chan string, config 
 		case message := <-queues[queueName]:
 			select {
 			case recoveryCh <- getRecovery("GET", queueName, message):
-				messageParts := strings.SplitN(message, "@", 2)
-				uid, message := messageParts[0], messageParts[1]
-				responseMessage(context, config, uid, message)
+				responseMessage(context, config, message)
 				return
 			default:
 				context.String(http.StatusInternalServerError, "Internal server error!")
@@ -420,7 +410,7 @@ func downloadHandler(config Config) gin.HandlerFunc {
 			context.Abort()
 			return
 		} else {
-			responseMessage(context, config, "", message)
+			responseMessage(context, config, message)
 			return
 		}
 	}
