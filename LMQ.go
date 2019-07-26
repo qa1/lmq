@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"database/sql"
-	"encoding/base64"
 	"encoding/json"
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
@@ -11,6 +10,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -62,13 +62,12 @@ func initialRecovery(queues map[string]chan string, recoveryCh chan string, conf
 			log.Println(err)
 		}
 		for scanner.Scan() {
-			lineBase64 := scanner.Text()
-			lineBytes, err := base64.StdEncoding.DecodeString(lineBase64)
+			lineEscape := scanner.Text()
+			line, err := url.QueryUnescape(lineEscape)
 			if err != nil {
 				log.Println(err)
 				continue
 			}
-			line := string(lineBytes)
 			parts := strings.SplitN(line, " ", 3)
 			if len(parts) < 3 {
 				log.Println("Incorrect recovery line.")
@@ -130,7 +129,7 @@ func writingRecovery(recoveryCh chan string, config Config) {
 	}
 	defer file.Close()
 	for recovery := range recoveryCh {
-		_, err := file.WriteString(base64.StdEncoding.EncodeToString([]byte(recovery)) + "\n")
+		_, err := file.WriteString(url.QueryEscape(recovery) + "\n")
 		if err != nil {
 			log.Println(err)
 		}
@@ -475,6 +474,7 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	router := gin.Default()
+
 	router.Use(gzip.Gzip(gzip.DefaultCompression))
 	ipWhiteList := make(map[string]bool)
 	for _, ip := range config.IpWhiteList {
