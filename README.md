@@ -9,7 +9,7 @@ Version 1.4.6
     > go build ./LMQ.go
 - Build cleanup code
     > go build ./cleanup.go
-- Run LMQ server and use by
+- Run LMQ server
     > ./LMQ ./config.json
 - Run cleanup
     > ./cleanup ./config.json
