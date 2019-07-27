@@ -21,12 +21,12 @@ func main()  {
 
 	configBytes, err := ioutil.ReadFile(configPath)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalln(err)
 	}
 	var config Utils.Config
 	err = json.Unmarshal(configBytes, &config)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalln(err)
 	}
 
 	filenames, err := ioutil.ReadDir(config.RecoveryDirPath)
@@ -35,13 +35,21 @@ func main()  {
 	}
 	var queuesMap = map[string]map[string]int{}
 	for _, filename := range filenames {
-		file, err := os.OpenFile(config.RecoveryDirPath + filename.Name(), os.O_RDONLY, 0644)
+		// Check open files (O_EXCL not work in some OS)
+		err := os.Rename(config.RecoveryDirPath + filename.Name(), config.RecoveryDirPath + filename.Name() + ".tmp")
 		if err != nil {
-			log.Fatalln(err)
+			log.Println(err)
+			continue
+		}
+		file, err := os.OpenFile(config.RecoveryDirPath + filename.Name() + ".tmp", os.O_RDONLY, 0644)
+		if err != nil {
+			log.Println(err)
+			continue
 		}
 		scanner := bufio.NewScanner(file)
 		if err := scanner.Err(); err != nil {
 			log.Println(err)
+			continue
 		}
 		for scanner.Scan() {
 			lineEscape := scanner.Text()
@@ -77,34 +85,33 @@ func main()  {
 			}
 		}
 		file.Close()
-		err = os.Remove(config.RecoveryDirPath + filename.Name())
+		err = os.Remove(config.RecoveryDirPath + filename.Name() + ".tmp")
 		if err != nil {
 			log.Println(err)
 		}
 	}
 
-	recoveryFileSize := 0
-	file, err := os.OpenFile(config.RecoveryDirPath + strconv.FormatInt(time.Now().UnixNano(), 10), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
-	if err != nil {
-		log.Println(err)
-	}
+	var file *os.File = nil
+	recoveryFileSize := config.RecoveryFileSize
 	for queueName, queueMap := range queuesMap {
 		for message, count := range queueMap {
 			recovery := Utils.GetRecovery("SET", queueName, message)
 			for i := 0; i < count; i++ {
+				if recoveryFileSize >= config.RecoveryFileSize {
+					if file != nil {
+						file.Close()
+					}
+					recoveryFileSize = 0
+					file, err = os.OpenFile(config.RecoveryDirPath + strconv.FormatInt(time.Now().UnixNano(), 10), os.O_WRONLY|os.O_CREATE, 0644)
+					if err != nil {
+						log.Fatalln(err)
+					}
+				}
 				_, err := file.WriteString(url.QueryEscape(recovery) + "\n")
 				if err != nil {
 					log.Println(err)
 				}
 				recoveryFileSize++
-				if recoveryFileSize >= config.RecoveryFileSize {
-					file.Close()
-					recoveryFileSize = 0
-					file, err = os.OpenFile(config.RecoveryDirPath + strconv.FormatInt(time.Now().UnixNano(), 10), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
-					if err != nil {
-						log.Println(err)
-					}
-				}
 			}
 		}
 	}

@@ -19,8 +19,8 @@ import (
 )
 
 func increaseQueueSize(queues map[string]chan string, queueName string, size int) {
-	threshold := size / 2
-	if cap(queues[queueName]) - len(queues[queueName]) < threshold {
+	threshold := 0
+	if cap(queues[queueName]) - len(queues[queueName]) <= threshold {
 		out := make(chan string, cap(queues[queueName]) + size)
 		for v := range queues[queueName] {
 			out <- v
@@ -39,7 +39,7 @@ func initialRecovery(queues map[string]chan string, config Utils.Config) {
 	}
 	var queuesMap = map[string]map[string]int{}
 	for _, filename := range filenames {
-		file, err := os.OpenFile(config.RecoveryDirPath + filename.Name(), os.O_RDONLY, 0644)
+		file, err := os.OpenFile(config.RecoveryDirPath + filename.Name(), os.O_RDONLY|os.O_EXCL, 0644)
 		if err != nil {
 			log.Fatalln(err)
 		}
@@ -99,26 +99,25 @@ func initialRecovery(queues map[string]chan string, config Utils.Config) {
 }
 
 func writingRecovery(recoveryCh chan string, config Utils.Config) {
-	recoveryFileSize := 0
-	file, err := os.OpenFile(config.RecoveryDirPath + strconv.FormatInt(time.Now().UnixNano(), 10), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
-	if err != nil {
-		log.Println(err)
-	}
-	defer file.Close()
+	var file *os.File = nil
+	var err error = nil
+	recoveryFileSize := config.RecoveryFileSize
 	for recovery := range recoveryCh {
+		if recoveryFileSize >= config.RecoveryFileSize {
+			if file != nil {
+				file.Close()
+			}
+			recoveryFileSize = 0
+			file, err = os.OpenFile(config.RecoveryDirPath + strconv.FormatInt(time.Now().UnixNano(), 10), os.O_WRONLY|os.O_CREATE, 0644)
+			if err != nil {
+				log.Fatalln(err)
+			}
+		}
 		_, err := file.WriteString(url.QueryEscape(recovery) + "\n")
 		if err != nil {
 			log.Println(err)
 		}
 		recoveryFileSize++
-		if recoveryFileSize >= config.RecoveryFileSize {
-			file.Close()
-			recoveryFileSize = 0
-			file, err = os.OpenFile(config.RecoveryDirPath + strconv.FormatInt(time.Now().UnixNano(), 10), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
-			if err != nil {
-				log.Println(err)
-			}
-		}
 	}
 }
 
