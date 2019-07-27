@@ -4,7 +4,19 @@ A lightweight message queue to work with short messages or content references as
 
 Version 1.4.6
 
-# Methods
+## Usage
+- Build server code
+    > go build ./LMQ.go
+- Build cleanup code
+    > go build ./cleanup.go
+- Run LMQ server and use by
+    > ./LMQ ./config.json
+- Run cleanup
+    > ./cleanup ./config.json
+
+- Use [PyLMQ](https://github.com/misamplus/PyLMQ) to connect
+
+## Methods
 
 - GET /list
     > List of the queues.
@@ -30,7 +42,7 @@ Version 1.4.6
 - GET /delete/[queue]
 	> Delete the queue.
 
-# Message types
+## Message types
 
 - [message]
     > Pure text message (for short messages).
@@ -41,7 +53,7 @@ Version 1.4.6
 - mysql:[table_name]/[id]
 	> Mysql record as the message ('id' field as identification and 'data' field as content).
 	
-# License
+## License
 
 Lightweight Message Queue
 
