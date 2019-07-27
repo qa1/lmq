@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -33,13 +34,18 @@ func increaseQueueSize(queues map[string]chan string, queueName string, size int
 }
 
 func initialRecovery(queues map[string]chan string, config Utils.Config) {
-	filenames, err := ioutil.ReadDir(config.RecoveryDirPath)
+	fileInfos, err := ioutil.ReadDir(config.RecoveryDirPath)
 	if err != nil {
 		log.Fatalln(err)
 	}
+	filenames := make([]string, len(fileInfos))
+	for i := 0; i < len(fileInfos); i++ {
+		filenames[i] = fileInfos[i].Name()
+	}
+	sort.Strings(filenames)
 	var queuesMap = map[string]map[string]int{}
 	for _, filename := range filenames {
-		file, err := os.OpenFile(config.RecoveryDirPath + filename.Name(), os.O_RDONLY|os.O_EXCL, 0644)
+		file, err := os.OpenFile(config.RecoveryDirPath + filename, os.O_RDONLY|os.O_EXCL, 0644)
 		if err != nil {
 			log.Fatalln(err)
 		}
@@ -108,7 +114,9 @@ func writingRecovery(recoveryCh chan string, config Utils.Config) {
 				file.Close()
 			}
 			recoveryFileSize = 0
-			file, err = os.OpenFile(config.RecoveryDirPath + strconv.FormatInt(time.Now().UnixNano(), 10), os.O_WRONLY|os.O_CREATE, 0644)
+			recoveryFileName := strconv.FormatInt(time.Now().UnixNano(), 10)
+			file, err = os.OpenFile(config.RecoveryDirPath + recoveryFileName, os.O_WRONLY|os.O_CREATE, 0644)
+
 			if err != nil {
 				log.Fatalln(err)
 			}

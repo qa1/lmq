@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -29,19 +30,20 @@ func main()  {
 		log.Fatalln(err)
 	}
 
-	filenames, err := ioutil.ReadDir(config.RecoveryDirPath)
+	fileInfos, err := ioutil.ReadDir(config.RecoveryDirPath)
 	if err != nil {
 		log.Fatalln(err)
 	}
+	filenames := make([]string, len(fileInfos))
+	for i := 0; i < len(fileInfos); i++ {
+		filename := fileInfos[i].Name()
+		filenames[i] = filename
+	}
+	sort.Strings(filenames)
 	var queuesMap = map[string]map[string]int{}
-	for _, filename := range filenames {
-		// Check open files (O_EXCL not work in some OS)
-		err := os.Rename(config.RecoveryDirPath + filename.Name(), config.RecoveryDirPath + filename.Name() + ".tmp")
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-		file, err := os.OpenFile(config.RecoveryDirPath + filename.Name() + ".tmp", os.O_RDONLY, 0644)
+	for i := 0; i < len(filenames) - 1; i++ {
+		filename := filenames[i]
+		file, err := os.OpenFile(config.RecoveryDirPath + filename, os.O_RDONLY, 0644)
 		if err != nil {
 			log.Println(err)
 			continue
@@ -85,7 +87,7 @@ func main()  {
 			}
 		}
 		file.Close()
-		err = os.Remove(config.RecoveryDirPath + filename.Name() + ".tmp")
+		err = os.Remove(config.RecoveryDirPath + filename)
 		if err != nil {
 			log.Println(err)
 		}
@@ -102,7 +104,7 @@ func main()  {
 						file.Close()
 					}
 					recoveryFileSize = 0
-					file, err = os.OpenFile(config.RecoveryDirPath + strconv.FormatInt(time.Now().UnixNano(), 10), os.O_WRONLY|os.O_CREATE, 0644)
+					file, err = os.OpenFile(config.RecoveryDirPath + "0" + strconv.FormatInt(time.Now().UnixNano(), 10), os.O_WRONLY|os.O_CREATE, 0644)
 					if err != nil {
 						log.Fatalln(err)
 					}
