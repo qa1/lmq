@@ -5,6 +5,8 @@ A lightweight message queue to work with short messages or content references as
 Version 1.4.6
 
 ## Usage
+- Install requirements
+    > go get github.com/gin-contrib/gzip github.com/go-sql-driver/mysql
 - Build server code
     > go build ./LMQ.go
 - Build cleanup code
