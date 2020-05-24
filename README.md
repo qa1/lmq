@@ -16,7 +16,10 @@ Version 1.4.6
 - Run cleanup
     > ./cleanup ./config.json
 
-- Use [PyLMQ](https://github.com/misamplus/PyLMQ) to connect
+* Or use it as a [Docker container](https://hub.docker.com/r/misamplus/lmq)
+    > docker pull misamplus/lmq
+
+* Use [PyLMQ](https://github.com/misamplus/PyLMQ) to connect
 
 ## Methods
 
