@@ -33,7 +33,7 @@ func increaseQueueSize(queues map[string]chan string, queueName string, size int
 	}
 }
 
-func initialRecovery(queues map[string]chan string, config Utils.Config) {
+func initialRecovery() {
 	fileInfos, err := ioutil.ReadDir(config.RecoveryDirPath)
 	if err != nil {
 		log.Fatalln(err)
@@ -104,7 +104,7 @@ func initialRecovery(queues map[string]chan string, config Utils.Config) {
 	}
 }
 
-func writingRecovery(recoveryCh chan string, config Utils.Config) {
+func writingRecovery() {
 	var file *os.File = nil
 	var err error = nil
 	recoveryFileSize := config.RecoveryFileSize
@@ -234,165 +234,155 @@ func cleanupRecovery() {
 	}
 }
 
-func listHandler(queues map[string]chan string) gin.HandlerFunc {
-	return func(context *gin.Context) {
-		var queueNamesLines = ""
-		for queueName := range queues {
-			queueNamesLines += queueName + "\n"
-		}
-		context.String(http.StatusOK, queueNamesLines)
-		return
+func listHandler(context *gin.Context) {
+	var queueNamesLines = ""
+	for queueName := range queues {
+		queueNamesLines += queueName + "\n"
 	}
+	context.String(http.StatusOK, queueNamesLines)
+	return
 }
 
-func countHandler(queues map[string]chan string) gin.HandlerFunc {
-	return func(context *gin.Context) {
-		queueName := context.Param("queue")
-		_, ok := queues[queueName]
-		if !ok {
-			context.String(http.StatusNotFound, "Queue not exists!")
-			context.Abort()
-			return
-		}
-		context.String(http.StatusOK, strconv.Itoa(len(queues[queueName])))
+func countHandler(context *gin.Context) {
+	queueName := context.Param("queue")
+	_, ok := queues[queueName]
+	if !ok {
+		context.String(http.StatusNotFound, "Queue not exists!")
+		context.Abort()
 		return
 	}
+	context.String(http.StatusOK, strconv.Itoa(len(queues[queueName])))
+	return
 }
 
-func skipHandler(queues map[string]chan string) gin.HandlerFunc {
-	return func(context *gin.Context) {
-		queueName := context.Param("queue")
-		_, ok := queues[queueName]
-		if !ok {
-			context.String(http.StatusNotFound, "Queue not exists!")
-			context.Abort()
-			return
-		}
-		number := context.Param("number")
-		n, err := strconv.Atoi(number)
-		if err != nil {
-			context.String(http.StatusBadRequest, "Number must be a integer!")
-			context.Abort()
-			return
-		}
-		var messages []string
-		for i := 0; i < n; i++ {
-			select {
-			case message := <-queues[queueName]:
-				messages = append(messages, message)
-				queues[queueName] <- message
-			default:
-				break
-			}
-		}
-		context.String(http.StatusOK, "OK.")
+func skipHandler(context *gin.Context) {
+	queueName := context.Param("queue")
+	_, ok := queues[queueName]
+	if !ok {
+		context.String(http.StatusNotFound, "Queue not exists!")
+		context.Abort()
 		return
 	}
-}
-
-func setHandler(queues map[string]chan string, recoveryCh chan string, config Utils.Config) gin.HandlerFunc {
-	return func(context *gin.Context) {
-		queueName := context.Param("queue")
-		_, ok := queues[queueName]
-		if !ok {
-			queues[queueName] = make(chan string, config.QueueInitSize)
-		}
-		increaseQueueSize(queues, queueName, config.QueueInitSize)
-		message := context.Param("message")
-		message = message[1:]
-		if message == "" {
-			context.String(http.StatusBadRequest, "Message is empty!")
-			context.Abort()
-			return
-		}
-		messageParts := strings.SplitN(message, ":", 2)
-		if len(messageParts) > 1 {
-			switch messageParts[0] {
-			case "file":
-				if _, err := os.Stat(config.FileBasePath + messageParts[1]); os.IsNotExist(err) {
-					context.String(http.StatusNotAcceptable, "File not exists!")
-					context.Abort()
-					return
-				}
-			case "mysql":
-				recordName := strings.SplitN(messageParts[1], "/", 2)
-				if len(recordName) != 2 {
-					context.String(http.StatusNotAcceptable, "Record name not valid!")
-					context.Abort()
-					return
-				}
-				table, id := recordName[0], recordName[1]
-				db, err := sql.Open("mysql", config.MsqlConnectionString)
-				if err != nil {
-					log.Println(err)
-					context.String(http.StatusInternalServerError, "Internal server error!")
-					context.Abort()
-					return
-				}
-				defer db.Close()
-				rows, err := db.Query("SELECT data FROM " + table + " WHERE id = " + id + ";")
-				if err != nil {
-					log.Println(err)
-					context.String(http.StatusInternalServerError, "Internal server error!")
-					context.Abort()
-					return
-				}
-				defer rows.Close()
-				if !rows.Next() {
-					context.String(http.StatusNotAcceptable, "Record not exists!")
-					context.Abort()
-					return
-				}
-			}
-		}
+	number := context.Param("number")
+	n, err := strconv.Atoi(number)
+	if err != nil {
+		context.String(http.StatusBadRequest, "Number must be a integer!")
+		context.Abort()
+		return
+	}
+	var messages []string
+	for i := 0; i < n; i++ {
 		select {
-		case queues[queueName] <- message:
-			select {
-			case recoveryCh <- Utils.GetRecovery("SET", queueName, message):
-				context.String(http.StatusOK, "OK.")
+		case message := <-queues[queueName]:
+			messages = append(messages, message)
+			queues[queueName] <- message
+		default:
+			break
+		}
+	}
+	context.String(http.StatusOK, "OK.")
+	return
+}
+
+func setHandler(context *gin.Context) {
+	queueName := context.Param("queue")
+	_, ok := queues[queueName]
+	if !ok {
+		queues[queueName] = make(chan string, config.QueueInitSize)
+	}
+	increaseQueueSize(queues, queueName, config.QueueInitSize)
+	message := context.Param("message")
+	message = message[1:]
+	if message == "" {
+		context.String(http.StatusBadRequest, "Message is empty!")
+		context.Abort()
+		return
+	}
+	messageParts := strings.SplitN(message, ":", 2)
+	if len(messageParts) > 1 {
+		switch messageParts[0] {
+		case "file":
+			if _, err := os.Stat(config.FileBasePath + messageParts[1]); os.IsNotExist(err) {
+				context.String(http.StatusNotAcceptable, "File not exists!")
+				context.Abort()
 				return
-			default:
+			}
+		case "mysql":
+			recordName := strings.SplitN(messageParts[1], "/", 2)
+			if len(recordName) != 2 {
+				context.String(http.StatusNotAcceptable, "Record name not valid!")
+				context.Abort()
+				return
+			}
+			table, id := recordName[0], recordName[1]
+			db, err := sql.Open("mysql", config.MsqlConnectionString)
+			if err != nil {
+				log.Println(err)
 				context.String(http.StatusInternalServerError, "Internal server error!")
 				context.Abort()
 				return
 			}
+			defer db.Close()
+			rows, err := db.Query("SELECT data FROM " + table + " WHERE id = " + id + ";")
+			if err != nil {
+				log.Println(err)
+				context.String(http.StatusInternalServerError, "Internal server error!")
+				context.Abort()
+				return
+			}
+			defer rows.Close()
+			if !rows.Next() {
+				context.String(http.StatusNotAcceptable, "Record not exists!")
+				context.Abort()
+				return
+			}
+		}
+	}
+	select {
+	case queues[queueName] <- message:
+		select {
+		case recoveryCh <- Utils.GetRecovery("SET", queueName, message):
+			context.String(http.StatusOK, "OK.")
+			return
 		default:
 			context.String(http.StatusInternalServerError, "Internal server error!")
 			context.Abort()
 			return
 		}
+	default:
+		context.String(http.StatusInternalServerError, "Internal server error!")
+		context.Abort()
+		return
 	}
 }
 
-func getHandler(queues map[string]chan string, recoveryCh chan string) gin.HandlerFunc {
-	return func(context *gin.Context) {
-		queueName := context.Param("queue")
-		_, ok := queues[queueName]
-		if !ok {
-			context.String(http.StatusNotFound, "Queue not exists!")
-			context.Abort()
-			return
-		}
+func getHandler(context *gin.Context) {
+	queueName := context.Param("queue")
+	_, ok := queues[queueName]
+	if !ok {
+		context.String(http.StatusNotFound, "Queue not exists!")
+		context.Abort()
+		return
+	}
+	select {
+	case message := <-queues[queueName]:
 		select {
-		case message := <-queues[queueName]:
-			select {
-			case recoveryCh <- Utils.GetRecovery("GET", queueName, message):
-				context.String(http.StatusOK, message)
-				return
-			default:
-				context.String(http.StatusInternalServerError, "Internal server error!")
-				context.Abort()
-				return
-			}
+		case recoveryCh <- Utils.GetRecovery("GET", queueName, message):
+			context.String(http.StatusOK, message)
+			return
 		default:
-			context.String(http.StatusGone, "Queue is empty!")
+			context.String(http.StatusInternalServerError, "Internal server error!")
 			context.Abort()
 			return
 		}
+	default:
+		context.String(http.StatusGone, "Queue is empty!")
+		context.Abort()
+		return
 	}
 }
 
-func responseMessage(context *gin.Context, config Utils.Config, message string) {
+func responseMessage(context *gin.Context, message string) {
 	messageParts := strings.SplitN(message, ":", 2)
 	if len(messageParts) > 1 {
 		switch messageParts[0] {
@@ -461,68 +451,62 @@ func responseMessage(context *gin.Context, config Utils.Config, message string) 
 	}
 }
 
-func fetchHandler(queues map[string]chan string, recoveryCh chan string, config Utils.Config) gin.HandlerFunc {
-	return func(context *gin.Context) {
-		queueName := context.Param("queue")
-		_, ok := queues[queueName]
-		if !ok {
-			context.String(http.StatusNotFound, "Queue not exists!")
-			context.Abort()
-			return
-		}
-		select {
-		case message := <-queues[queueName]:
-			select {
-			case recoveryCh <- Utils.GetRecovery("GET", queueName, message):
-				responseMessage(context, config, message)
-				return
-			default:
-				context.String(http.StatusInternalServerError, "Internal server error!")
-				context.Abort()
-				return
-			}
-		default:
-			context.String(http.StatusGone, "Queue is empty!")
-			context.Abort()
-			return
-		}
+func fetchHandler(context *gin.Context) {
+	queueName := context.Param("queue")
+	_, ok := queues[queueName]
+	if !ok {
+		context.String(http.StatusNotFound, "Queue not exists!")
+		context.Abort()
+		return
 	}
-}
-
-func downloadHandler(config Utils.Config) gin.HandlerFunc {
-	return func(context *gin.Context) {
-		message := context.Param("message")
-		message = message[1:]
-		if message == "" {
-			context.String(http.StatusBadRequest, "Message is empty!")
-			context.Abort()
-			return
-		} else {
-			responseMessage(context, config, message)
-			return
-		}
-	}
-}
-
-func deleteHandler(queues map[string]chan string, recoveryCh chan string) gin.HandlerFunc {
-	return func(context *gin.Context) {
-		queueName := context.Param("queue")
-		_, ok := queues[queueName]
-		if !ok {
-			context.String(http.StatusNotFound, "Queue not exists!")
-			context.Abort()
-			return
-		}
-		delete(queues, queueName)
+	select {
+	case message := <-queues[queueName]:
 		select {
-		case recoveryCh <- Utils.GetRecovery("DEL", queueName, ""):
-			context.String(http.StatusOK, "OK.")
+		case recoveryCh <- Utils.GetRecovery("GET", queueName, message):
+			responseMessage(context, message)
 			return
 		default:
 			context.String(http.StatusInternalServerError, "Internal server error!")
 			context.Abort()
 			return
 		}
+	default:
+		context.String(http.StatusGone, "Queue is empty!")
+		context.Abort()
+		return
+	}
+}
+
+func downloadHandler(context *gin.Context) {
+	message := context.Param("message")
+	message = message[1:]
+	if message == "" {
+		context.String(http.StatusBadRequest, "Message is empty!")
+		context.Abort()
+		return
+	} else {
+		responseMessage(context, message)
+		return
+	}
+}
+
+func deleteHandler(context *gin.Context) {
+	queueName := context.Param("queue")
+	_, ok := queues[queueName]
+	if !ok {
+		context.String(http.StatusNotFound, "Queue not exists!")
+		context.Abort()
+		return
+	}
+	delete(queues, queueName)
+	select {
+	case recoveryCh <- Utils.GetRecovery("DEL", queueName, ""):
+		context.String(http.StatusOK, "OK.")
+		return
+	default:
+		context.String(http.StatusInternalServerError, "Internal server error!")
+		context.Abort()
+		return
 	}
 }
 
@@ -534,6 +518,27 @@ func iPWhiteList(whitelist map[string]bool) gin.HandlerFunc {
 			return
 		}
 	}
+}
+
+var (
+	config Utils.Config
+	queues = make(map[string]chan string)
+	recoveryCh = make(chan string, 1000)
+)
+
+func setupRouter() *gin.Engine {
+	router := gin.Default()
+
+	router.GET("/list", listHandler)
+	router.GET("/count/:queue", countHandler)
+	router.GET("/skip/:queue/:number", skipHandler)
+	router.GET("/set/:queue/*message", setHandler)
+	router.GET("/get/:queue", getHandler)
+	router.GET("/fetch/:queue", fetchHandler)
+	router.GET("/download/*message", downloadHandler)
+	router.GET("/delete/:queue", deleteHandler)
+
+	return router
 }
 
 func main() {
@@ -552,23 +557,20 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	var config Utils.Config
 	err = json.Unmarshal(configBytes, &config)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	queues := make(map[string]chan string)
-	recoveryCh := make(chan string, 1000)
+	go writingRecovery()
 
-	go writingRecovery(recoveryCh, config)
-
-	initialRecovery(queues, config)
+	initialRecovery()
 
 	if !config.Debug {
 		gin.SetMode(gin.ReleaseMode)
 	}
-	router := gin.Default()
+
+	router := setupRouter()
 
 	if config.GzipEnable {
 		router.Use(gzip.Gzip(gzip.DefaultCompression))
@@ -581,15 +583,6 @@ func main() {
 		}
 		router.Use(iPWhiteList(ipWhiteList))
 	}
-
-	router.GET("/list", listHandler(queues))
-	router.GET("/count/:queue", countHandler(queues))
-	router.GET("/skip/:queue/:number", skipHandler(queues))
-	router.GET("/set/:queue/*message", setHandler(queues, recoveryCh, config))
-	router.GET("/get/:queue", getHandler(queues, recoveryCh))
-	router.GET("/fetch/:queue", fetchHandler(queues, recoveryCh, config))
-	router.GET("/download/*message", downloadHandler(config))
-	router.GET("/delete/:queue", deleteHandler(queues, recoveryCh))
 
 	i := 0
 	for ; i < len(config.BindAddressList)-1; i++ {
