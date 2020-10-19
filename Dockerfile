@@ -1,20 +1,14 @@
-FROM golang:1.14.3-alpine3.11 as builder
+FROM golang:1.15.3-alpine3.12 as builder
 
 COPY . /app
 
 WORKDIR /app
 
-RUN apk add --no-cache git
+RUN go build
 
-RUN go get github.com/gin-contrib/gzip github.com/go-sql-driver/mysql
+FROM alpine:3.12
 
-RUN go build ./LMQ.go
-RUN go build ./cleanup.go
-
-FROM alpine:3.11
-
-COPY --from=builder /app/LMQ /app/LMQ
-COPY --from=builder /app/cleanup /app/cleanup
+COPY --from=builder /app/lmq /app/lmq
 
 WORKDIR /app
 
@@ -22,4 +16,4 @@ VOLUME /data
 
 EXPOSE 3000
 
-CMD ./LMQ /data/config.json
+CMD ./lmq /data/config.json

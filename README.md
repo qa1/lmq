@@ -2,24 +2,20 @@
 
 A lightweight message queue to work with short messages or content references as message.
 
-Version 1.4.6
+Version 1.5.0
 
 ## Usage
-- Install requirements
-    > go get github.com/gin-contrib/gzip github.com/go-sql-driver/mysql
-- Build server code
-    > go build ./LMQ.go
-- Build cleanup code
-    > go build ./cleanup.go
+- Build
+    > go build
 - Run LMQ server
-    > ./LMQ ./config.json
-- Run cleanup
-    > ./cleanup ./config.json
+    > ./lmq ./config.json
+- Cleanup unnecessary logs
+    > ./lmq ./config.json cleanup
 
-* Or use it as a [Docker container](https://hub.docker.com/r/misamplus/lmq)
-    > docker pull misamplus/lmq
+* Or use it as a [Docker container](https://hub.docker.com/r/justmisam/lmq)
+    > docker pull justmisam/lmq
 
-* Use [PyLMQ](https://github.com/misamplus/PyLMQ) to connect
+* Use [PyLMQ](https://github.com/justmisam/PyLMQ) to connect
 
 ## Methods
 

@@ -23,13 +23,13 @@ func call(payload string) string {
 	return string(body)
 }
 
-func main()  {
-	for i := 0; i < 1000; i ++ {
+func main() {
+	for i := 0; i < 1000; i++ {
 		fmt.Println(i)
 		call("set/test/x" + strconv.Itoa(i))
 	}
 
-	for i := 0; i < 500; i ++ {
+	for i := 0; i < 500; i++ {
 		fmt.Println(i)
 		call("get/test")
 	}
